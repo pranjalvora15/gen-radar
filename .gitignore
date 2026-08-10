@@ -1,0 +1,10 @@
+node_modules/
+ai-service-js/
+dist/
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+coverage/
