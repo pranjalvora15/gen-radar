@@ -29,6 +29,28 @@ article.
 - Private IndexedDB-backed AI white-paper reader with page-aware RAG,
   selectable text and figure explanations, and 24-hour workspace expiry
 
+## Architecture
+
+```mermaid
+flowchart LR
+    User[Reader] --> Web[React and Vite]
+    Web --> API[Fastify API]
+
+    API --> DB[(PostgreSQL and pgvector)]
+    API --> Exa[Exa discovery and extraction]
+    API --> Scholar[Semantic Scholar]
+    API --> AI[Python FastAPI AI service]
+
+    AI --> Chain[LangChain structured output]
+    AI --> Graph[LangGraph workflows]
+    Graph --> Gemini[Gemini Flash-Lite and Flash]
+    Chain --> Embeddings[Gemini embeddings]
+    Embeddings --> DB
+
+    DB --> API
+    API --> Web
+```
+
 ## Prerequisites
 
 - Node.js 20+
@@ -276,11 +298,38 @@ create display summaries for the accepted articles.
    selected image evidence to the Media Agent. Public readers can inspect the
    images but cannot submit questions.
 
-```text
-Question → exact hash → scope guardrail → one question embedding
-         → semantic duplicate check → article/media evidence
-         → evidence grader → optional Exa Research Agent
-         → Supervisor → Reviewer → cached answer with citations
+### Article-chat agentic RAG flow
+
+```mermaid
+flowchart TD
+    Question[User question] --> Hash[Exact question hash lookup]
+    Hash -->|Exact duplicate| Cached[Return cached answer]
+    Hash -->|New question| Guardrail[AI-domain scope guardrail]
+
+    Guardrail -->|Outside AI domain| Closed[Close the conversation]
+    Guardrail -->|Ambiguous| Rephrase[Ask the user to rephrase]
+    Guardrail -->|Allowed| Embed[Create one question embedding]
+
+    Embed --> Semantic[Semantic duplicate search]
+    Semantic -->|Similar duplicate| Cached
+    Semantic -->|New meaning| Retrieval[Article pgvector retrieval and selected media]
+
+    subgraph AgenticRAG[Agentic RAG routing and specialist execution]
+        Retrieval --> Router[Evidence grader and routing agent]
+        Router -->|Article evidence| DocumentAgent[Document subagent]
+        Router -->|Selected image or video| MediaAgent[Media subagent]
+        Router -->|Missing or current evidence| ResearchAgent[Exa Research subagent]
+        Router -->|Article evidence insufficient| GeneralPath[General-knowledge path]
+
+        DocumentAgent --> Supervisor[Supervisor agent]
+        MediaAgent --> Supervisor
+        ResearchAgent --> Supervisor
+        GeneralPath --> Supervisor
+        Supervisor --> Reviewer[Reviewer agent]
+    end
+
+    Reviewer --> Answer[Labelled answer with citations]
+    Answer --> CacheAnswer[(Cache answer and evidence)]
 ```
 
 ### On-demand image flow: Fastify and Python concurrency
@@ -414,6 +463,48 @@ calculates the same hash while streaming the upload to a temporary file and
 rejects a mismatch. PostgreSQL uses its unique `file_hash` index to reuse an
 exact duplicate without extracting or embedding it again; it never loads all
 stored hashes for comparison.
+
+### Private white-paper RAG flow
+
+```mermaid
+flowchart TD
+    PDF[User selects one PDF] --> BrowserHash[Browser SHA-256 hash]
+    PDF --> IndexedDB[(Original PDF in browser IndexedDB)]
+    BrowserHash --> Upload[Fastify streaming upload and hash verification]
+    Upload --> Duplicate{Exact document hash exists?}
+
+    Duplicate -->|Ready duplicate| Workspace[Private paper workspace]
+    Duplicate -->|New or retryable| Inspect[Temporary PDF inspection]
+    Inspect --> Admission[AI relevance and PDF guardrails]
+    Admission -->|Rejected, encrypted, scanned, or non-AI| Reject[Reject document]
+    Admission -->|Accepted| Pages[Extract page-aware text and chunks]
+    Pages --> EmbedPages[Gemini document embeddings]
+    EmbedPages --> Vectors[(PostgreSQL pages and pgvector)]
+    Vectors --> Workspace
+    Workspace --> Reader[React PDF reader]
+
+    Reader --> Interaction{User interaction}
+    Interaction -->|Selected text| Selection[Selection plus surrounding page context]
+    Interaction -->|Selected figure| Figure[Gemini Flash figure explanation]
+    Interaction -->|Question| Mode{Answer mode}
+
+    Mode -->|General knowledge| General[Skip retrieval and answer from Gemini]
+    Mode -->|Paper first| QueryEmbedding[Create query embedding]
+    QueryEmbedding --> Retrieve[Retrieve top five paper chunks]
+    Retrieve --> Grade[Evidence sufficiency grader]
+    Grade -->|Sufficient| PaperAnswer[Paper-grounded answer with page citations]
+    Grade -->|Insufficient| Fallback[Clearly labelled general-knowledge fallback]
+
+    Selection --> Ephemeral[Show latest result only]
+    Figure --> Ephemeral
+    General --> Ephemeral
+    PaperAnswer --> Ephemeral
+    Fallback --> Ephemeral
+    Ephemeral --> Privacy[No PDF questions, answers, or crops persisted]
+
+    Workspace --> Expiry[24-hour sliding expiry]
+    Expiry --> Cleanup[Delete workspace, orphaned pages, and vectors]
+```
 
 The original PDF is stored only as a Blob in browser IndexedDB. Fastify deletes
 its temporary copy after inspection. PostgreSQL stores document metadata,
