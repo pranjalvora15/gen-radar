@@ -74,7 +74,8 @@ export async function buildApp(options = {}) {
 
   if (process.env.SERVE_CLIENT === "true") {
     await fastify.register(fastifyStatic, {
-      root: fileURLToPath(new URL("../../client/dist", import.meta.url))
+      root: fileURLToPath(new URL("../../client/dist", import.meta.url)),
+      wildcard: false
     });
 
     fastify.setNotFoundHandler((request, reply) => {
