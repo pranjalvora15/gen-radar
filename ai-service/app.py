@@ -1,7 +1,10 @@
 import logging
 import asyncio
+import hmac
+import os
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 
 from models import (
     AnalyzeMediaRequest,
@@ -76,6 +79,27 @@ from workflows import (
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GenAI Updates AI Service", version="0.1.0")
+
+
+@app.middleware("http")
+async def require_internal_api_key(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    expected_key = os.getenv("AI_INTERNAL_API_KEY", "")
+    if not expected_key:
+        if os.getenv("ENVIRONMENT", "development") == "production":
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "AI service authentication is not configured"},
+            )
+        return await call_next(request)
+
+    provided_key = request.headers.get("x-internal-api-key", "")
+    if not hmac.compare_digest(provided_key, expected_key):
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    return await call_next(request)
 
 
 @app.get("/health")

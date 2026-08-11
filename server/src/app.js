@@ -2,7 +2,9 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
+import { fileURLToPath } from "node:url";
 import { createPool } from "./db.js";
 import { registerHooks } from "./hooks.js";
 import articleChatRoutes from "./routes/articleChatsPhase3.js";
@@ -69,6 +71,20 @@ export async function buildApp(options = {}) {
   await fastify.register(updateRoutes);
   await fastify.register(articleChatRoutes);
   await fastify.register(paperWorkspaceRoutes);
+
+  if (process.env.SERVE_CLIENT === "true") {
+    await fastify.register(fastifyStatic, {
+      root: fileURLToPath(new URL("../../client/dist", import.meta.url))
+    });
+
+    fastify.setNotFoundHandler((request, reply) => {
+      const acceptsHtml = request.headers.accept?.includes("text/html");
+      if (request.method === "GET" && acceptsHtml && !request.url.startsWith("/api/")) {
+        return reply.sendFile("index.html");
+      }
+      return reply.code(404).send({ message: "Not found" });
+    });
+  }
 
   return fastify;
 }

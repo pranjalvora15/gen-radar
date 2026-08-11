@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_URL = import.meta.env.VITE_API_URL
+  ?? (import.meta.env.PROD ? "" : "http://localhost:3000");
 
 async function request(path, options) {
   const hasBody = options?.body !== undefined;

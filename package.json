@@ -2,22 +2,17 @@
   "name": "genai-updates-platform",
   "private": true,
   "workspaces": [
-    "ai-service-js",
     "client",
     "server"
   ],
   "scripts": {
     "dev": "npm run dev:python",
     "dev:python": "npm-run-all --parallel dev:client dev:server:python dev:ai:python",
-    "dev:javascript": "npm-run-all --parallel dev:client dev:server:javascript dev:ai:javascript",
     "dev:client": "npm --workspace client run dev",
     "dev:server:python": "cross-env AI_SERVICE_URL=http://localhost:8010 npm --workspace server run dev",
-    "dev:server:javascript": "cross-env AI_SERVICE_URL=http://localhost:8001 npm --workspace server run dev",
     "dev:ai:python": "python -m uvicorn app:app --app-dir ai-service --port 8010",
-    "dev:ai:javascript": "npm --workspace ai-service-js run dev",
     "build": "npm --workspace client run build",
-    "check": "npm --workspace server run check && npm --workspace ai-service-js run check && npm --workspace client run build && python -m compileall -q ai-service",
-    "test": "npm --workspace server test && npm --workspace ai-service-js test && python -m unittest discover -s ai-service/tests -v",
+    "check": "npm --workspace server run check && npm --workspace client run build && python -m compileall -q ai-service",
     "refresh": "npm --workspace server run refresh"
   },
   "devDependencies": {

@@ -5,12 +5,21 @@ function createHttpError(message, statusCode = 502) {
 }
 
 export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://localhost:8000") {
+  const internalApiKey = process.env.AI_INTERNAL_API_KEY;
+
+  function internalHeaders(headers = {}) {
+    return {
+      ...headers,
+      ...(internalApiKey ? { "X-Internal-API-Key": internalApiKey } : {})
+    };
+  }
+
   async function post(path, body, timeout = 60_000) {
     let response;
     try {
       response = await fetch(`${baseUrl}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: internalHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeout)
       });
@@ -39,6 +48,7 @@ export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://
     try {
       response = await fetch(`${baseUrl}${path}`, {
         method: "POST",
+        headers: internalHeaders(),
         body: form,
         signal: AbortSignal.timeout(timeout)
       });
