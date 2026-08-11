@@ -8,3 +8,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 coverage/
+
+# Keep test cases local; do not publish them in the repository.
+test/
+tests/
+__tests__/
+*.test.*
+*.spec.*
