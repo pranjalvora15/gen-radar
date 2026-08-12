@@ -4,6 +4,13 @@ function createHttpError(message, statusCode = 502) {
   return error;
 }
 
+const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
+const RETRY_DELAYS_MS = [2_000, 5_000];
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://localhost:8000") {
   const internalApiKey = process.env.AI_INTERNAL_API_KEY;
 
@@ -15,20 +22,36 @@ export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://
   }
 
   async function post(path, body, timeout = 60_000) {
-    let response;
-    try {
-      response = await fetch(`${baseUrl}${path}`, {
-        method: "POST",
-        headers: internalHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeout)
-      });
-    } catch {
-      throw createHttpError("AI service is unavailable");
-    }
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+      let response;
+      try {
+        response = await fetch(`${baseUrl}${path}`, {
+          method: "POST",
+          headers: internalHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeout)
+        });
+      } catch (error) {
+        if (error?.name === "TimeoutError") {
+          throw createHttpError("AI service request timed out", 503);
+        }
+        if (attempt < RETRY_DELAYS_MS.length) {
+          await wait(RETRY_DELAYS_MS[attempt]);
+          continue;
+        }
+        throw createHttpError("AI service is unavailable", 503);
+      }
 
-    if (!response.ok) {
+      if (response.ok) {
+        return response.json();
+      }
+
       const responseBody = await response.json().catch(() => ({}));
+      if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
+        await wait(RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+
       const statusCode = response.status >= 400 && response.status < 500
         ? response.status
         : 503;
@@ -38,7 +61,7 @@ export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://
       );
     }
 
-    return response.json();
+    throw createHttpError("AI service is unavailable", 503);
   }
 
   async function postFile(path, filename, bytes, timeout = 180_000) {
