@@ -29,7 +29,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install server dependencies
-        run: npm ci --prefix server --omit=dev
+        run: npm ci --workspace server --omit=dev
 
       - name: Delete expired data
         run: npm --workspace server run cleanup:chats
