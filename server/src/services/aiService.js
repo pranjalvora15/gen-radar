@@ -4,11 +4,26 @@ function createHttpError(message, statusCode = 502) {
   return error;
 }
 
-const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
-const RETRY_DELAYS_MS = [2_000, 5_000];
+const RETRYABLE_GATEWAY_STATUS_CODES = new Set([502, 503, 504]);
+// A sleeping Render Free service can take about a minute to become ready.
+// These delays provide a bounded 72-second wake-up window without extending
+// the timeout for a request that has already reached the AI application.
+const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 15_000, 20_000, 20_000];
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRetryableGatewayResponse(response, responseBody) {
+  if (!RETRYABLE_GATEWAY_STATUS_CODES.has(response.status)) {
+    return false;
+  }
+
+  // FastAPI returns structured JSON when the AI application handled the
+  // request. Let that application error reach the caller instead of repeating
+  // an expensive model call. Render's cold-start gateway response has no such
+  // structured detail.
+  return !responseBody.detail && !responseBody.message;
 }
 
 export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://localhost:8000") {
@@ -47,7 +62,10 @@ export function createAiService(baseUrl = process.env.AI_SERVICE_URL || "http://
       }
 
       const responseBody = await response.json().catch(() => ({}));
-      if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
+      if (
+        isRetryableGatewayResponse(response, responseBody)
+        && attempt < RETRY_DELAYS_MS.length
+      ) {
         await wait(RETRY_DELAYS_MS[attempt]);
         continue;
       }
