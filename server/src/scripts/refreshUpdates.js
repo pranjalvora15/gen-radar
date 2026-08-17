@@ -15,13 +15,21 @@ try {
     exa,
     logger: console
   });
-  const result = await refresh.refreshNow({ force: true });
-  const summary = result.summary;
-  console.log(
-    `Discovery complete: ${summary.found} candidate(s), `
-    + `${summary.newCandidates} new candidate(s), `
-    + `${summary.selected} selected, ${summary.inserted} inserted.`
-  );
+  const force = process.env.FEED_REFRESH_FORCE === "true";
+  const result = await refresh.refreshNow({ force });
+  if (!result.claimed) {
+    console.log(
+      "Feed refresh skipped because it completed recently or another refresh "
+      + `is already running. Last completed: ${result.state.lastRefreshedAt || "never"}.`
+    );
+  } else {
+    const summary = result.summary;
+    console.log(
+      `Discovery complete: ${summary.found} candidate(s), `
+      + `${summary.newCandidates} new candidate(s), `
+      + `${summary.selected} selected, ${summary.inserted} inserted.`
+    );
+  }
 } catch (error) {
   console.error(`Discovery failed: ${error.message}`);
   process.exitCode = 1;

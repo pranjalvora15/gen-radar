@@ -252,9 +252,29 @@ Use these actions:
 - continue: the question is in scope
 - close: it is clearly or probably outside scope (medium/high confidence)
 - rephrase: the question is too ambiguous to classify (low confidence)
+- inspect_media: a selected image must be inspected before its terminology or
+  relationship to the article can be classified
 
 An out-of-scope decision closes this conversation, so do not reject legitimate
 AI prerequisite questions. Return concise structured data only.
+
+Selected article media provides context, not blanket permission:
+- If an image is selected and the question depends on a label, abbreviation,
+  chart axis, visual relationship, or other content that is not available in
+  the supplied text, use inspect_media with intent "media". Do not close merely
+  because terminology inside the image is unfamiliar.
+- Use inspect_media only when image analysis has not already been completed.
+- After image analysis is completed, use its supplied findings to choose
+  continue, close, or rephrase. Never request inspect_media again.
+- If the user asks to ignore or move away from the selected image and requests
+  an unrelated topic, classify the actual requested topic normally and close
+  the conversation when it is outside the AI domain.
+- If a compound question mixes a legitimate AI or image question with a
+  separate, substantive request from an unrelated domain, classify the whole
+  request as unrelated and close it. An AI term must not be used to smuggle an
+  unrelated request through the guardrail.
+- If completed image analysis still leaves the relationship uncertain, use
+  rephrase rather than close.
 """.strip()
 
 SCOPE_USER_TEMPLATE = """
@@ -269,6 +289,14 @@ CONVERSATION SUMMARY:
 
 RECENT MESSAGES:
 {recent_messages}
+
+SELECTED ARTICLE MEDIA:
+Has selected image: {has_selected_image}
+Selected media ID: {selected_media_id}
+Selected media type: {selected_media_type}
+Image analysis completed: {media_analysis_completed}
+Selected image analysis:
+{selected_media_analysis}
 
 USER QUESTION:
 {question}

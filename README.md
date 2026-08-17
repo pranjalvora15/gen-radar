@@ -15,6 +15,7 @@ article.
 - Gemini editorial ranking that rejects news, announcements, and marketing
 - Interchangeable Python/FastAPI and JavaScript/Fastify AI services
 - Fixed LangGraph workflows and LangChain structured output in both implementations
+- Privacy-aware LangSmith tracing for public AI workflows and forced trace exclusion for private PDFs
 - Gemini model configured only through `GEMINI_MODEL`
 - Public article URL chat with anonymous conversation IDs
 - Embeddings for every article: short articles answer from full context and
@@ -43,6 +44,7 @@ flowchart LR
 
     AI --> Chain[LangChain structured output]
     AI --> Graph[LangGraph workflows]
+    Graph -. public traces only .-> LangSmith[LangSmith observability]
     Graph --> Gemini[Gemini Flash-Lite and Flash]
     Chain --> Embeddings[Gemini embeddings]
     Embeddings --> DB
@@ -124,6 +126,7 @@ PAPER_EMBEDDING_BATCH_SIZE=10
 PAPER_EMBEDDING_MIN_INTERVAL_SECONDS=21
 PAPER_EMBEDDING_MAX_ATTEMPTS=4
 FEED_REFRESH_INTERVAL_HOURS=48
+FEED_REFRESH_FORCE=false
 ARTICLE_MAX_CHARS=100000
 PAPER_WORKSPACE_SECRET=replace-with-a-long-random-secret
 CLEANUP_API_KEY=replace-with-a-separate-random-secret
@@ -135,11 +138,52 @@ PAPER_AI_REQUEST_LIMIT=30
 PAPER_WORKSPACE_ACTION_LIMIT=20
 PAPER_ACTIVE_WORKSPACE_LIMIT=100
 PAPER_RELEVANCE_THRESHOLD=0.70
+LANGSMITH_PUBLIC_TRACING=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=gen-radar-development
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_HIDE_INPUTS=true
+LANGSMITH_HIDE_OUTPUTS=true
+LANGSMITH_TRACING_SAMPLING_RATE=1.0
 ```
 
 The Python service loads `ai-service/.env`. The JavaScript service loads
 `ai-service-js/.env` and falls back to `ai-service/.env` when its own Google key
 is not configured.
+
+### Optional LangSmith observability
+
+LangSmith can trace the public LangChain and LangGraph workflows used for
+article explanations, routing, evidence grading, guardrails, agent supervision,
+and answer generation. Create an API key in LangSmith under **Settings -> API
+Keys**, then configure the Python AI service:
+
+```text
+LANGSMITH_PUBLIC_TRACING=true
+LANGSMITH_API_KEY=replace-with-your-langsmith-key
+LANGSMITH_PROJECT=gen-radar-production
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_HIDE_INPUTS=true
+LANGSMITH_HIDE_OUTPUTS=true
+LANGSMITH_TRACING_SAMPLING_RATE=1.0
+```
+
+`LANGSMITH_WORKSPACE_ID` is needed only when the API key can access more than
+one workspace. Use the endpoint assigned to the LangSmith region instead of the
+US endpoint when applicable.
+
+Production tracing is deliberately opt-in through
+`LANGSMITH_PUBLIC_TRACING`; do not enable global tracing as a substitute. With
+the safe production defaults above, LangSmith receives workflow structure,
+latency, model runs, tags, and non-sensitive metadata, but input and output
+payloads are hidden. Local development can set `LANGSMITH_HIDE_INPUTS=false`
+and `LANGSMITH_HIDE_OUTPUTS=false` when using non-sensitive test content.
+
+All private white-paper operations explicitly disable LangSmith tracing,
+including PDF admission, page/query embeddings, selected-text explanations,
+figure analysis, and paper questions. This preserves the product guarantee
+that private PDF content, questions, and generated explanations are not sent to
+the observability service.
 
 ## 3. Initialize PostgreSQL
 
@@ -210,11 +254,17 @@ Health checks:
 
 ## 5. Discover and refresh updates
 
-`GET /api/updates` returns the latest ten stored articles immediately and checks
-the singleton refresh state in PostgreSQL. When the last successful refresh is
-at least 48 hours old, one request atomically claims a background refresh while
-other visitors continue receiving the existing feed. No browser timer, public
-refresh endpoint, cron job, or always-running server interval is required.
+`GET /api/updates` returns the latest ten stored articles and the current
+singleton refresh state from PostgreSQL. It never starts a detached background
+job, so local development and Render request restarts cannot interrupt feed
+discovery or leave production waiting on a request-owned process.
+
+The `Refresh learning feed` GitHub Actions workflow runs every six hours. The
+workflow executes the repository's Node.js refresh script on a temporary GitHub
+runner. The script atomically claims the job only when the last successful
+refresh is at least 48 hours old, then calls Exa and the deployed Python AI
+service before inserting accepted articles into PostgreSQL. Runs inside the
+48-hour freshness window exit successfully without calling Exa or Gemini.
 
 Each refresh requests a larger discovery pool, normalizes URLs, removes URLs
 already stored in PostgreSQL before editorial ranking, and selects at most ten
@@ -222,13 +272,28 @@ new articles with a maximum of two per domain. Only selected articles are fully
 extracted. The AI service creates one grounded seven-to-eight sentence
 `displaySummary` per selected article, and Fastify stores the complete accepted
 content plus extraction metadata. A failed refresh leaves the existing feed
-available and records the failure for a later retry.
+available, records the failure, and can be retried by the next scheduled run.
 
-Discovery can also be forced from the local command line:
+Discovery can also be requested from the local command line:
 
 ```bash
 npm run refresh
 ```
+
+The command respects `FEED_REFRESH_INTERVAL_HOURS`. To deliberately bypass the
+freshness interval in PowerShell, run:
+
+```powershell
+$env:FEED_REFRESH_FORCE="true"
+npm run refresh
+```
+
+The scheduled workflow uses the existing `CLEANUP_DATABASE_URL` repository
+secret plus `EXA_API_KEY` and `AI_INTERNAL_API_KEY` repository secrets. The
+internal key must match the value configured on the deployed Python AI service.
+`AI_SERVICE_URL` can be set as a repository variable; when omitted it defaults
+to the deployed Gen Radar Python service URL. Local development does not
+automatically refresh the production feed.
 
 It collects recent technical blogs and experiments with Exa, adds recent papers
 from Semantic Scholar's bulk-search endpoint, and sends the candidate batch to

@@ -54,6 +54,12 @@ from embeddings import (
     embed_question,
 )
 from paper_processing import PaperValidationError, inspect_pdf
+from observability import (
+    invoke_private_workflow,
+    invoke_public_operation,
+    invoke_public_workflow,
+    private_tracing_disabled,
+)
 from paper_workflows import (
     paper_figure_workflow,
     paper_question_workflow,
@@ -114,7 +120,12 @@ async def health() -> dict[str, str]:
 )
 async def explain_article(request: ArticleRequest) -> ArticleExplanation:
     try:
-        state = await article_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            article_workflow(),
+            {"request": request},
+            feature="article-explanation",
+            run_name="explain_article",
+        )
         return state["result"]
     except Exception as error:
         raise HTTPException(
@@ -129,7 +140,12 @@ async def explain_article(request: ArticleRequest) -> ArticleExplanation:
 )
 async def explain_keyword(request: KeywordRequest) -> KeywordExplanation:
     try:
-        state = await keyword_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            keyword_workflow(),
+            {"request": request},
+            feature="keyword-explanation",
+            run_name="explain_keyword",
+        )
         return state["result"]
     except Exception as error:
         raise HTTPException(
@@ -146,7 +162,12 @@ async def rank_candidates(
     request: CandidateRankingRequest,
 ) -> CandidateRankingResponse:
     try:
-        state = await ranking_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            ranking_workflow(),
+            {"request": request},
+            feature="candidate-ranking",
+            run_name="rank_candidates",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Candidate ranking failed")
@@ -163,7 +184,12 @@ async def summarize_feed_articles(
     request: FeedSummaryRequest,
 ) -> FeedSummaryResponse:
     try:
-        state = await feed_summary_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            feed_summary_workflow(),
+            {"request": request},
+            feature="feed-summary",
+            run_name="summarize_feed_articles",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Feed summary generation failed")
@@ -177,7 +203,10 @@ async def embed_documents(
     request: EmbedDocumentsRequest,
 ) -> EmbedDocumentsResponse:
     try:
-        return await asyncio.to_thread(embed_document, request)
+        return await invoke_public_operation(
+            lambda: asyncio.to_thread(embed_document, request),
+            feature="article-embedding",
+        )
     except Exception as error:
         logger.exception("Document embedding failed")
         raise HTTPException(
@@ -188,7 +217,10 @@ async def embed_documents(
 @app.post("/ai/embed-query", response_model=EmbedQueryResponse)
 async def embed_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
     try:
-        return await asyncio.to_thread(embed_question, request.query)
+        return await invoke_public_operation(
+            lambda: asyncio.to_thread(embed_question, request.query),
+            feature="article-query-embedding",
+        )
     except Exception as error:
         logger.exception("Query embedding failed")
         raise HTTPException(
@@ -199,7 +231,8 @@ async def embed_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
 @app.post("/ai/embed-paper-query", response_model=EmbedQueryResponse)
 async def embed_paper_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
     try:
-        return await asyncio.to_thread(embed_paper_question, request.query)
+        with private_tracing_disabled():
+            return await asyncio.to_thread(embed_paper_question, request.query)
     except Exception as error:
         logger.exception("Paper query embedding failed")
         raise HTTPException(
@@ -214,7 +247,12 @@ async def embed_paper_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
 )
 async def route_question(request: RouteQuestionRequest) -> QuestionRoute:
     try:
-        state = await route_question_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            route_question_workflow(),
+            {"request": request},
+            feature="question-routing",
+            run_name="route_question",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Question routing failed")
@@ -230,7 +268,12 @@ async def route_question(request: RouteQuestionRequest) -> QuestionRoute:
 )
 async def answer_question(request: AnswerQuestionRequest) -> AnswerResult:
     try:
-        state = await answer_question_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            answer_question_workflow(),
+            {"request": request},
+            feature="article-question-answer",
+            run_name="answer_question",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Question answering failed")
@@ -245,7 +288,12 @@ async def answer_question(request: AnswerQuestionRequest) -> AnswerResult:
 )
 async def judge_answer(request: JudgeAnswerRequest) -> AnswerJudgment:
     try:
-        state = await judge_answer_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            judge_answer_workflow(),
+            {"request": request},
+            feature="answer-review",
+            run_name="judge_answer",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Answer verification failed")
@@ -262,8 +310,11 @@ async def summarize_conversation(
     request: SummarizeConversationRequest,
 ) -> ConversationSummary:
     try:
-        state = await summarize_conversation_workflow().ainvoke(
-            {"request": request}
+        state = await invoke_public_workflow(
+            summarize_conversation_workflow(),
+            {"request": request},
+            feature="conversation-summary",
+            run_name="summarize_conversation",
         )
         return state["result"]
     except Exception as error:
@@ -280,7 +331,12 @@ async def summarize_conversation(
 )
 async def check_question_scope(request: ScopeQuestionRequest) -> ScopeDecision:
     try:
-        state = await scope_question_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            scope_question_workflow(),
+            {"request": request},
+            feature="scope-guardrail",
+            run_name="check_question_scope",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Scope guardrail failed")
@@ -293,7 +349,12 @@ async def check_question_scope(request: ScopeQuestionRequest) -> ScopeDecision:
 )
 async def suggest_questions(request: SuggestedQuestionsRequest) -> SuggestedQuestions:
     try:
-        state = await suggested_questions_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            suggested_questions_workflow(),
+            {"request": request},
+            feature="suggested-questions",
+            run_name="suggest_questions",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Question suggestion failed")
@@ -309,7 +370,12 @@ async def suggest_questions(request: SuggestedQuestionsRequest) -> SuggestedQues
 )
 async def analyze_media(request: AnalyzeMediaRequest) -> MediaAnalysisResponse:
     try:
-        state = await analyze_media_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            analyze_media_workflow(),
+            {"request": request},
+            feature="article-media-analysis",
+            run_name="analyze_media",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Media analysis failed")
@@ -323,7 +389,12 @@ async def analyze_media(request: AnalyzeMediaRequest) -> MediaAnalysisResponse:
 )
 async def grade_evidence(request: EvidenceGradeRequest) -> EvidenceGrade:
     try:
-        state = await grade_evidence_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            grade_evidence_workflow(),
+            {"request": request},
+            feature="evidence-grading",
+            run_name="grade_evidence",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Evidence grading failed")
@@ -337,7 +408,12 @@ async def grade_evidence(request: EvidenceGradeRequest) -> EvidenceGrade:
 )
 async def supervise_answer(request: SuperviseAnswerRequest) -> SupervisedAnswer:
     try:
-        state = await supervise_answer_workflow().ainvoke({"request": request})
+        state = await invoke_public_workflow(
+            supervise_answer_workflow(),
+            {"request": request},
+            feature="multi-agent-supervision",
+            run_name="supervise_answer",
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Multi-agent answer workflow failed")
@@ -354,7 +430,7 @@ async def supervise_answer(request: SuperviseAnswerRequest) -> SupervisedAnswer:
 async def inspect_paper(file: UploadFile = File(...)) -> PaperInspectionResponse:
     try:
         title, pages, sample = await asyncio.to_thread(inspect_pdf, file.file)
-        state = await paper_relevance_workflow().ainvoke({
+        state = await invoke_private_workflow(paper_relevance_workflow(), {
             "title": title,
             "sample": sample,
         })
@@ -381,7 +457,8 @@ async def inspect_paper(file: UploadFile = File(...)) -> PaperInspectionResponse
 )
 async def embed_pages(request: EmbedPaperPagesRequest) -> EmbedPaperPagesResponse:
     try:
-        return await asyncio.to_thread(embed_paper_pages, request)
+        with private_tracing_disabled():
+            return await asyncio.to_thread(embed_paper_pages, request)
     except Exception as error:
         logger.exception("Paper page embedding failed")
         raise HTTPException(status_code=502, detail="Paper page embedding failed") from error
@@ -396,7 +473,9 @@ async def explain_paper_selection(
     request: PaperSelectionRequest,
 ) -> PaperSelectionExplanation:
     try:
-        state = await paper_selection_workflow().ainvoke({"request": request})
+        state = await invoke_private_workflow(
+            paper_selection_workflow(), {"request": request}
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Paper selection explanation failed")
@@ -412,7 +491,9 @@ async def explain_paper_figure(
     request: PaperFigureRequest,
 ) -> PaperFigureExplanation:
     try:
-        state = await paper_figure_workflow().ainvoke({"request": request})
+        state = await invoke_private_workflow(
+            paper_figure_workflow(), {"request": request}
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Paper figure explanation failed")
@@ -426,7 +507,9 @@ async def explain_paper_figure(
 )
 async def answer_paper_question(request: PaperQuestionRequest) -> PaperQuestionAnswer:
     try:
-        state = await paper_question_workflow().ainvoke({"request": request})
+        state = await invoke_private_workflow(
+            paper_question_workflow(), {"request": request}
+        )
         return state["result"]
     except Exception as error:
         logger.exception("Paper question answering failed")

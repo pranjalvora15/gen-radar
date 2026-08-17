@@ -150,14 +150,7 @@ export function createFeedRefreshService({ database, ai, exa, logger }) {
 
   return {
     state,
-    async checkAndTrigger() {
-      if (await claim(false)) {
-        void runClaimed().catch(() => {});
-        return { ...(await state()), refreshing: true };
-      }
-      return state();
-    },
-    async refreshNow({ force = true } = {}) {
+    async refreshNow({ force = false } = {}) {
       if (!(await claim(force))) {
         return { claimed: false, state: await state() };
       }

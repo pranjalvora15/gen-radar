@@ -585,6 +585,13 @@ def prepare_scope(state: ScopeState) -> ScopeState:
                     article_context=request.article_context or "None",
                     conversation_summary=request.conversation_summary or "None",
                     recent_messages=serialize_models(request.recent_messages),
+                    has_selected_image=request.has_selected_image,
+                    selected_media_id=request.selected_media_id or "None",
+                    selected_media_type=request.selected_media_type or "None",
+                    media_analysis_completed=request.media_analysis_completed,
+                    selected_media_analysis=(
+                        request.selected_media_analysis or "Not available"
+                    ),
                     question=request.question,
                 )
             ),

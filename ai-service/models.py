@@ -234,6 +234,19 @@ class ScopeQuestionRequest(BaseModel):
     recent_messages: list[ConversationMessage] = Field(
         alias="recentMessages", default_factory=list, max_length=8
     )
+    has_selected_image: bool = Field(alias="hasSelectedImage", default=False)
+    selected_media_id: int | None = Field(
+        alias="selectedMediaId", default=None, gt=0
+    )
+    selected_media_type: Literal["image"] | None = Field(
+        alias="selectedMediaType", default=None
+    )
+    media_analysis_completed: bool = Field(
+        alias="mediaAnalysisCompleted", default=False
+    )
+    selected_media_analysis: str = Field(
+        alias="selectedMediaAnalysis", default="", max_length=6_000
+    )
 
 
 class ScopeDecision(BaseModel):
@@ -245,7 +258,7 @@ class ScopeDecision(BaseModel):
         "ai", "article-prerequisite", "conversation-follow-up", "unrelated", "unclear"
     ]
     confidence: Literal["high", "medium", "low"]
-    action: Literal["continue", "close", "rephrase"]
+    action: Literal["continue", "close", "rephrase", "inspect_media"]
     reason_code: str = Field(alias="reasonCode", min_length=1, max_length=100)
     intent: Literal["document", "media", "research", "concept", "unclear"]
 

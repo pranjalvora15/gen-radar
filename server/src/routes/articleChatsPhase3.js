@@ -824,18 +824,55 @@ export default async function articleChatRoutes(fastify) {
       };
     }
 
-    const scope = await fastify.ai.checkQuestionScope({
-      question: aiQuestion,
+    const scopeInput = {
+      question,
       articleTitle: conversation.article.title,
       articleContext: conversation.article.content.slice(0, 4_000),
       conversationSummary: conversation.summary,
-      recentMessages: recentMessages(conversation)
-    });
-    const embedded = await fastify.ai.embedQuery(question);
-    questionData.embedding = embedded.embedding;
+      recentMessages: recentMessages(conversation),
+      hasSelectedImage: Boolean(selectedMedia),
+      selectedMediaId: selectedMedia?.id || null,
+      selectedMediaType: selectedMedia?.mediaType || null,
+      mediaAnalysisCompleted: false,
+      selectedMediaAnalysis: ""
+    };
+    let scope = await fastify.ai.checkQuestionScope(scopeInput);
+    let tailoredImageEvidence = null;
+    if (!selectedMedia && scope.action === "inspect_media") {
+      scope = {
+        ...scope,
+        allowed: false,
+        action: "rephrase",
+        reasonCode: "selected-image-required"
+      };
+    }
+    if (selectedMedia && scope.action !== "close") {
+      tailoredImageEvidence = await analyzeSelectedImage(
+        fastify,
+        conversation,
+        selectedMedia,
+        question
+      );
+      scope = await fastify.ai.checkQuestionScope({
+        ...scopeInput,
+        mediaAnalysisCompleted: true,
+        selectedMediaAnalysis: tailoredImageEvidence?.excerpt.slice(0, 6_000)
+          || "Image analysis did not identify usable technical content."
+      });
+      if (scope.action === "inspect_media") {
+        scope = {
+          ...scope,
+          allowed: false,
+          action: "rephrase",
+          reasonCode: "image-scope-remains-unclear"
+        };
+      }
+    }
     if (scope.action !== "continue") {
       return closeOrRephrase(fastify, conversation, questionData, scope);
     }
+    const embedded = await fastify.ai.embedQuery(question);
+    questionData.embedding = embedded.embedding;
 
     const semantic = await findSemanticDuplicate(
       fastify,
@@ -867,15 +904,15 @@ export default async function articleChatRoutes(fastify) {
       conversation,
       embedded.embedding
     );
-    let imageEvidence = [];
-    if (selectedMedia) {
-      const tailoredImageEvidence = await analyzeSelectedImage(
+    let imageEvidence = tailoredImageEvidence ? [tailoredImageEvidence] : [];
+    if (selectedMedia && !tailoredImageEvidence) {
+      const analyzedImageEvidence = await analyzeSelectedImage(
         fastify,
         conversation,
         selectedMedia,
         question
       );
-      if (tailoredImageEvidence) imageEvidence = [tailoredImageEvidence];
+      if (analyzedImageEvidence) imageEvidence = [analyzedImageEvidence];
     }
     const evidence = [...articleItems, ...imageEvidence];
     const grade = await fastify.ai.gradeEvidence({

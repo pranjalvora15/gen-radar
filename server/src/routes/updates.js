@@ -81,7 +81,7 @@ async function ensureCompleteSource(fastify, update) {
 
 export default async function updateRoutes(fastify) {
   fastify.get("/api/updates", { schema: listUpdatesSchema }, async () => {
-    const feed = await fastify.feedRefresh.checkAndTrigger();
+    const feed = await fastify.feedRefresh.state();
     const result = await fastify.db.query(
       `SELECT id, source_url, source_title, source_name, source_snippet,
               display_summary, source_published_at, discovered_at, category,

@@ -38,8 +38,20 @@ export async function buildApp(options = {}) {
     })
   );
 
+  const configuredOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const allowedOrigins = process.env.NODE_ENV === "production"
+    ? configuredOrigins
+    : [...new Set([
+        ...configuredOrigins,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ])];
+
   await fastify.register(cors, {
-    origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+    origin: allowedOrigins,
     credentials: true,
     allowedHeaders: [
       "Content-Type", "X-Chat-Token", "X-PDF-SHA256", "X-Cleanup-Key"
