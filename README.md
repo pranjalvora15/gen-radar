@@ -252,6 +252,25 @@ Health checks:
 - JavaScript AI: `http://localhost:8001/health`
 - Client: `http://localhost:5173`
 
+## Continuous integration and deployment
+
+The `CI` GitHub Actions workflow runs for pull requests into `main`, pushes to
+`main`, and manual dispatches. It installs the locked JavaScript dependencies
+and runs `npm run check`, which validates the Fastify source, creates the Vite
+production build, and compiles the Python AI source. It does not need production
+API keys because it does not call external services.
+
+Both Render services remain linked to the repository's `main` branch. Configure
+their **Auto-Deploy** setting as **After CI Checks Pass** so Render deploys the
+Fastify/React application and Python AI service only after the `Build and
+validate` GitHub check succeeds. A failed CI run therefore leaves the current
+production deployments unchanged.
+
+Production health endpoints:
+
+- Fastify/React: `https://gen-radar-app.onrender.com/api/health`
+- Python AI: `https://gen-radar-ai.onrender.com/health`
+
 ## 5. Discover and refresh updates
 
 `GET /api/updates` returns the latest ten stored articles and the current
